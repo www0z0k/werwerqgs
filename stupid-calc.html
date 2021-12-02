@@ -1,0 +1,226 @@
+<html>
+    <head>
+        <meta charset="utf8">
+        <script>
+            const getByID = id => document.getElementById(id);
+            const valByID = id => getByID(id).value;
+            const randRage = (min, max) => Math.round(Math.random() * (max - min)) + min;
+            const dice = (val) => randRage(1, val);
+
+            const classes = ['tank', 'fighter', 'archer', 'mage'];
+            const mainStats = {tank: 'vitality', fighter: 'strength', archer: 'agility', mage: 'intelligence'};
+
+            let heroes = [];
+            let selectedHeroIndex = 0;
+            let tower;
+    
+            const genHeroes = (reset) => {
+                const count = Number(valByID('count'));
+                const seed = Number(valByID('max-main'));
+                const diceVal = Number(valByID('hero-dice'));
+                const kHP = Number(valByID('k-hp'));
+                const kMana = Number(valByID('k-mana'));
+                const minSecondary = Number(valByID('min-secondary'));
+                if (reset) {
+                    heroes = [];
+                    classes.forEach(cls => {
+                        getByID(cls + 'Sel').innerHTML = '';
+                    });
+                }
+                for (let i = 0; i < count; i++) {
+                    const hero = new Hero(seed, minSecondary, diceVal, kHP, kMana); 
+                    heroes.push(hero);
+                    getByID(hero.class.toLowerCase() + 'Sel').innerHTML += `<option value=${heroes.length - 1}>${hero.toString(' ')}</option>`;
+                }
+
+                classes.forEach(cls => {
+                    getByID(cls).innerHTML = `${cls} ${heroes.filter(el => el.class === cls.toUpperCase()).length} / ${heroes.length}`;
+                });
+            }
+
+            const attack = () => {
+                const dmg = heroes[selectedHeroIndex].rollStatAgainst(tower.stat, tower.power);
+                getByID('log').innerHTML = `fight result: ${dmg}<br>`;
+                if (dmg < 0) {
+                    tower.hp += dmg;
+                    getByID('log').innerHTML += `tower took ${Math.abs(dmg)} damage`;
+                } else {
+                    getByID('log').innerHTML += `hero took ${dmg} damage`;
+                }
+                getByID('towers').innerHTML = tower.toString();
+                getByID('heroes').innerHTML = `selected:<br>${heroes[selectedHeroIndex].toString()}`;
+                validateAttackButton();
+            }
+
+            const createTower = () => {
+                tower = new Tower(valByID('tower-stat'), Number(valByID('tower-power')), Number(valByID('tower-hp')));
+                getByID('towers').innerHTML = tower.toString();
+                getByID('log').innerHTML = `tower created`;
+                validateAttackButton();
+            }
+
+            const selectHero = (index) => {
+                selectedHeroIndex = index;
+                getByID('heroes').innerHTML = `selected:<br>${heroes[index].toString('<br>')}`;
+                validateAttackButton();
+            }
+
+            const validateAttackButton = () => {
+                getByID('attack').style.display = heroes[selectedHeroIndex] && heroes[selectedHeroIndex].isAlive() && tower && tower.isAlive() ? 'block' : 'none';
+            }
+
+            const show = (cls) => {
+                const arr = cls === 'all' ? heroes : heroes.filter(el => el.class === cls.toUpperCase());
+                if (cls !== 'all') {
+                    const mainStat = arr.map(el => el[mainStats[cls]]);
+                    getByID('heroes').innerHTML = `main stat: ${mainStats[cls]}<br>max: ${Math.max(...mainStat)}`;
+                    getByID('heroes').innerHTML += `<br>min: ${Math.min(...mainStat)}`;
+                    getByID('heroes').innerHTML += `<br>avg: ${mainStat.reduce((a, b) => a + b) / mainStat.length}`;
+                    getByID('heroes').innerHTML += `<hr>`;
+                } else {
+                    getByID('heroes').innerHTML = '';
+                }
+                console.log('---------------------------heroes dump starts here-------------------');
+                console.log(arr[0].toTSVHeader() + '\n' + arr.map(el => el.toTSVString()).join('\n'));
+
+                getByID('heroes').innerHTML += arr.map(el => el.toString('<br>')).join('<hr>');
+            }
+    
+            class Hero {
+                constructor(seedPoints, minStat, diceVal, kHP, kMana) {
+                    this.checkDice = diceVal; // do we randomize this one?
+
+                    let seed = seedPoints - minStat * 3;
+                    const asWritten = getByID('as-written').checked;
+                    this.vitality = dice(seed);
+                    this.fullHP = Math.floor(this.vitality * kHP);
+                    this.hp = this.fullHP;
+                    seed = seed + (asWritten ? 0 : minStat) - this.vitality;
+                    this.strength = dice(seed);
+                    seed = seed + (asWritten ? 0 : minStat) - this.strength;
+                    this.agility = dice(seed);
+                    seed = seed + (asWritten ? minStat * 3 : minStat) - this.agility;
+                    this.intelligence = seed;
+                    this.fullMana = Math.floor(this.intelligence * kMana);
+                    this.mana = this.fullMana;
+
+                    this.kMana = kMana;
+                    this.kHP = kHP;
+
+                    this.class = this.vitality >= Math.max(this.strength, this.agility, this.intelligence) ? 'TANK'
+                                 : (this.strength >= Math.max(this.agility, this.intelligence) ? 'FIGHTER'
+                                 : (this.agility >= this.intelligence ? 'ARCHER' : 'MAGE'))
+                }
+                /** negative is damage to enemy */
+                rollStatAgainst(stat, value) {
+                    let roll = dice(this.checkDice);
+                    switch(stat) {
+                        case 'vit': 
+                            roll += this.vitality;
+                            break;
+                        case 'str': 
+                            roll += this.strength;
+                            break;
+                        case 'agi': 
+                            roll += this.agility;
+                            break;
+                        case 'int': 
+                            roll += this.intelligence;
+                            break;
+                        default: alert(`Error: no ${stat} here`);
+                    }
+                    const result = value - roll;
+                    if (result > 0) {
+                        this.takeDamage(result);
+                    }
+                    return result;
+                }
+
+                takeDamage(amount) {
+                    this.hp = this.hp < amount ? 0 : this.hp - amount;
+                }
+                
+                recieveHealing(amount) {
+                    this.hp = this.hp + amount > this.fullHP ? this.fullHP : this.hp + amount;
+                }
+                
+                isAlive() { return this.hp > 0 }
+
+                toTSVHeader() {
+                    return `CLASS\tVIT\tSTR\tAGI\tINT\tHP\tMANA`;
+                }
+                toTSVString() {
+                    return `${this.class}\t${this.vitality}\t${this.strength}\t${this.agility}\t${this.intelligence}\t${this.fullHP}\t${this.fullMana}`;
+                }
+                toString(delim = '<br>') {
+                    return `${this.class}${delim}VIT: ${this.vitality}${delim}STR: ${this.strength}${delim}AGI: ${this.agility}${delim}INT: ${this.intelligence}${delim}HP: ${this.hp}/${this.fullHP}${delim}MANA: ${this.mana}/${this.fullMana}`;
+                }
+
+                healthStats() {
+                    return `${this.hp}/${this.fullHP}`;
+                }
+                manaStats() {
+                    return `${this.mana}/${this.fullMana}`;
+                }
+            }
+
+            class Tower {
+                constructor(stat, power, hp) {
+                    this.stat = stat;
+                    this.power = power;
+                    this.fullHP = hp;
+                    this.hp = hp;
+                }
+                toString(delim = '<br>') {
+                    return `${this.stat}${delim}POW: ${this.power}${delim}HP: ${this.hp}/${this.fullHP}`;
+                }
+                isAlive() { return this.hp > 0 }
+            }
+    
+        </script>
+    </head>
+    <body>
+        <table style="width: 100%;">
+            <tr>
+                <td>
+                    <h3>hero</h3>
+        total points <input type="number" min="1" id="max-main" value="20"><br>
+        min_secondary <input type="number" min="1" id="min-secondary" value="1"><br>
+        k hp <input type="number" min="1" id="k-hp" value="2" step="0.1">k mana <input type="number" min="1" id="k-mana" value="2" step="0.1"><br>
+        hero dice <input type="number" min="1" id="hero-dice" value="6"><br>
+        как в диздоке (3 * min_secondary) плюсуются в последний стат <input type="checkbox" id="as-written"><br>
+        <button onclick="genHeroes()">add</button><button onclick="genHeroes(true)">re-create</button> <input type="number" min="1" id="count" value="100"> heroes<br>
+        <button id="tank" onclick="show(this.id)"></button>
+        <button id="fighter" onclick="show(this.id)"></button>
+        <button id="archer" onclick="show(this.id)"></button>
+        <button id="mage" onclick="show(this.id)"></button>
+        <button id="all" onclick="show(this.id)">all</button><br>
+        <select id="tankSel" onchange="selectHero(this.value)"></select><br>
+        <select id="fighterSel" onchange="selectHero(this.value)"></select><br>
+        <select id="archerSel" onchange="selectHero(this.value)"></select><br>
+        <select id="mageSel" onchange="selectHero(this.value)"></select><br>
+                </td>
+                <td>
+                    <h3>tower</h3>
+                    power <input type="number" value="7" id="tower-power"><br>
+                    hp <input type="number" value="5" id="tower-hp"><br>
+                    stat <select id="tower-stat">
+                        <option value="vit">vitality</option>
+                        <option value="str">strength</option>
+                        <option value="agi">agility</option>
+                        <option value="int">intelligence</option>
+                    </select> <br>
+                    <button onclick="createTower()">create tower</button>
+                </td>
+            </tr>
+            <tк>
+                <td>
+                    <div id="heroes"></div>
+                    <button id="attack" onclick="attack()" style="display: none;">attack!</button>
+                </td>    
+                <td id="towers"></td>    
+            </tr>
+        </table>
+        <div id="log"></div>
+    </body>
+</html>
