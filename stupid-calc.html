@@ -77,9 +77,11 @@
                 let deadHeroesCount = 0;
                 let deadTowersCount = 0;
                 let passedTowersCount = 0;
+                let aliveHeroesOnStart = party.filter(el => el.isAlive()).length;
+                let aliveTowersOnStart = dungeon.filter(el => el.isAlive()).length;
                 for (let i = 0; i < dungeon.length; i++) {
                     let tow = dungeon[i];
-                    while (tow.enabled && tow.isAlive() && deadHeroesCount < 3) {
+                    while (tow.enabled && tow.isAlive() && party.some(el => el.isAlive())) {
                         for (let j = 0; j < party.length; j++) {
                             let hero = party[j];
                             if(!(tow.enabled && tow.isAlive()) || !hero.isAlive()) {
@@ -101,21 +103,21 @@
                         }
                     }
                 }
-                console.log(`passed: ${passedTowersCount === 3}, death penalty: ${deadHeroesCount}, frags bonus ${deadTowersCount}`);
+                console.log(`passed: ${passedTowersCount === 3}, alive heroes on start: ${aliveHeroesOnStart}, alive towers on start: ${aliveTowersOnStart}, death penalty: ${deadHeroesCount}, frags bonus ${deadTowersCount}`);
                 party.forEach(el => console.log(el.toCSVStringState()));
                 dungeon.forEach(el => console.log(el.toCSVString()));
             }
 
             const attackTower = (hero, tower) => {
                 const dmg = hero.rollStatAgainst(tower.stat, tower.roll());
-                getByID('log').innerHTML += `<hr>fight result: ${dmg}<br>`;
+                // getByID('log').innerHTML += `<hr>fight result: ${dmg}<br>`;
                 if (dmg < 0) {
                     tower.hp += dmg;
                     if(tower.hp === tower.fullHP) debugger
                     tower.enabled = false;
-                    getByID('log').innerHTML += `tower took ${Math.abs(dmg)} damage`;
+                    // getByID('log').innerHTML += `tower took ${Math.abs(dmg)} damage`;
                 } else {
-                    getByID('log').innerHTML += `hero took ${dmg} damage`;
+                    // getByID('log').innerHTML += `hero took ${dmg} damage`;
                 }
             }
 
