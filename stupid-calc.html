@@ -1,25 +1,34 @@
 <html>
     <head>
         <meta charset="utf8">
+        <script src="char.js"></script>
+        <script src="tower.js"></script>
+
         <script>
             const getByID = id => document.getElementById(id);
             const valByID = id => getByID(id).value;
-            const randRage = (min, max) => Math.round(Math.random() * (max - min)) + min;
-            const dice = (val) => randRage(1, val);
+            const randRange = (min, max) => Math.round(Math.random() * (max - min)) + min;
+            const dice = (val) => randRange(1, val);
+            const wait = time => new Promise(resolve => setTimeout(resolve, time));
 
-            const classes = ['tank', 'fighter', 'archer', 'mage'];
-            const mainStats = {tank: 'vitality', fighter: 'strength', archer: 'agility', mage: 'intelligence'};
+            const classes = ['tank', 'fighter', 'archer', 'priest'];
+            const stats = ['vitality', 'strength', 'agility', 'intelligence'];
+            const mainStats = {tank: 'vitality', fighter: 'strength', archer: 'agility', priest: 'intelligence'};
 
             let heroes = [];
             let selectedHeroIndex = 0;
-            let tower;
+            let towers = [];
     
             const genHeroes = (reset) => {
                 const count = Number(valByID('count'));
                 const seed = Number(valByID('max-main'));
-                const diceVal = Number(valByID('hero-dice'));
-                const kHP = Number(valByID('k-hp'));
-                const kMana = Number(valByID('k-mana'));
+                
+                const kHP = {};
+                const kMana = {};
+                classes.forEach(el => {
+                    kHP[el] = Number(valByID('k-hp-' + el));
+                    kMana[el] = Number(valByID('k-mana-' + el));
+                }) 
                 const minSecondary = Number(valByID('min-secondary'));
                 if (reset) {
                     heroes = [];
@@ -28,7 +37,8 @@
                     });
                 }
                 for (let i = 0; i < count; i++) {
-                    const hero = new Hero(seed, minSecondary, diceVal, kHP, kMana); 
+                    const diceVal = randRange(Number(valByID('hero-dice-min')), Number(valByID('hero-dice-max')));
+                    const hero = new Hero(seed, minSecondary, diceVal, kHP, kMana, i); 
                     heroes.push(hero);
                     getByID(hero.class.toLowerCase() + 'Sel').innerHTML += `<option value=${heroes.length - 1}>${hero.toString(' ')}</option>`;
                 }
@@ -36,37 +46,118 @@
                 classes.forEach(cls => {
                     getByID(cls).innerHTML = `${cls} ${heroes.filter(el => el.class === cls.toUpperCase()).length} / ${heroes.length}`;
                 });
+
+                validateButtons();
             }
 
-            const attack = () => {
-                const dmg = heroes[selectedHeroIndex].rollStatAgainst(tower.stat, tower.power);
-                getByID('log').innerHTML = `fight result: ${dmg}<br>`;
+            const attack = async (hero, tower) => {
+                formParties();
+                dumpParties();
+                let shiftIndex = 0;
+                while(shiftIndex < dungeons.length - 1){
+                    parties.forEach((el, i) => {
+                        let dungIndex = i + shiftIndex;
+                        dungIndex = dungIndex >= dungeons.length ? dungIndex - dungeons.length : dungIndex;
+                        raidDungeon(el, dungeons[dungIndex]);
+                        healAndReenable(el, dungeons[dungIndex]);
+                    });
+
+                    console.log(`wave ${shiftIndex} complete`);
+                    await wait(1000);
+                    ++shiftIndex;
+                }
+            }
+
+            const healAndReenable = (party, dungeon) => {
+                party.forEach(el => el.healSelf());
+                dungeon.forEach(el => el.enabled = true);
+            }
+
+            const raidDungeon = (party, dungeon) => {
+                let deadHeroesCount = 0;
+                let deadTowersCount = 0;
+                let passedTowersCount = 0;
+                for (let i = 0; i < dungeon.length; i++) {
+                    let tow = dungeon[i];
+                    while (tow.enabled && tow.isAlive() && deadHeroesCount < 3) {
+                        for (let j = 0; j < party.length; j++) {
+                            let hero = party[j];
+                            if(!(tow.enabled && tow.isAlive()) || !hero.isAlive()) {
+                                continue;
+                            }
+                            attackTower(hero, tow);
+                            if(!tow.isAlive()){
+                                hero.frags++;
+                                deadTowersCount++;
+                            }
+                            
+                            if (!tow.enabled) {
+                                passedTowersCount++;
+                            }
+                            
+                            if(!hero.isAlive()){
+                                deadHeroesCount++;
+                            }
+                        }
+                    }
+                }
+                console.log(`passed: ${passedTowersCount === 3}, death penalty: ${deadHeroesCount}, frags bonus ${deadTowersCount}`);
+                party.forEach(el => console.log(el.toCSVStringState()));
+                dungeon.forEach(el => console.log(el.toCSVString()));
+            }
+
+            const attackTower = (hero, tower) => {
+                const dmg = hero.rollStatAgainst(tower.stat, tower.roll());
+                getByID('log').innerHTML += `<hr>fight result: ${dmg}<br>`;
                 if (dmg < 0) {
                     tower.hp += dmg;
+                    if(tower.hp === tower.fullHP) debugger
+                    tower.enabled = false;
                     getByID('log').innerHTML += `tower took ${Math.abs(dmg)} damage`;
                 } else {
                     getByID('log').innerHTML += `hero took ${dmg} damage`;
                 }
-                getByID('towers').innerHTML = tower.toString();
-                getByID('heroes').innerHTML = `selected:<br>${heroes[selectedHeroIndex].toString()}`;
-                validateAttackButton();
+            }
+
+            const createTowersForHeroes = (reset) => {
+                if(reset){
+                    towers = [];
+                }
+                for(let i = 0; i < heroes.length; i++){
+                    towers.push(createTower());
+                }
+
+                stats.forEach(cls => {
+                    getByID(cls).innerHTML = `${cls} ${towers.filter(el => el.stat === cls).length} / ${towers.length}`;
+                });
+                validateButtons();
             }
 
             const createTower = () => {
-                tower = new Tower(valByID('tower-stat'), Number(valByID('tower-power')), Number(valByID('tower-hp')));
-                getByID('towers').innerHTML = tower.toString();
-                getByID('log').innerHTML = `tower created`;
-                validateAttackButton();
+                const diceVal = randRange(Number(valByID('tower-dice-min')), Number(valByID('tower-dice-max')));
+                const hp = randRange(Number(valByID('tower-hp-min')), Number(valByID('tower-hp-max')));
+                const statIndex = randRange(0, stats.length - 1);
+                const statName = getByID('random-stat').checked ? stats[statIndex] : valByID('tower-stat');
+                // console.log(getByID('random-stat').checked);
+
+                const srcStats = heroes.filter(el => el.class === classes[statIndex].toUpperCase()).map(el => el[statName]);
+                const statVal = getByID('heroes-power').checked ? randRange(Math.min(...srcStats), Math.max(...srcStats)) : Number(valByID('tower-power'));
+                const result = new Tower(statName, statVal, diceVal, hp);
+                // getByID('towers').innerHTML = tower.toString();
+                // getByID('log').innerHTML = `tower created`;
+                // validateButtons();
+                return result;
             }
 
             const selectHero = (index) => {
                 selectedHeroIndex = index;
                 getByID('heroes').innerHTML = `selected:<br>${heroes[index].toString('<br>')}`;
-                validateAttackButton();
+                // validateButtons();
             }
 
-            const validateAttackButton = () => {
-                getByID('attack').style.display = heroes[selectedHeroIndex] && heroes[selectedHeroIndex].isAlive() && tower && tower.isAlive() ? 'block' : 'none';
+            const validateButtons = () => {
+                getByID('attack').style.display = heroes.length > 0 && towers.length > 0 ? 'block' : 'none';
+                getByID('heroes-towers').style.display = heroes.length > 0 ? 'block' : 'none';
             }
 
             const show = (cls) => {
@@ -81,101 +172,70 @@
                     getByID('heroes').innerHTML = '';
                 }
                 console.log('---------------------------heroes dump starts here-------------------');
-                console.log(arr[0].toTSVHeader() + '\n' + arr.map(el => el.toTSVString()).join('\n'));
+                console.log(arr[0].toCSVHeaderState() + '\n' + arr.map(el => el.toCSVStringState()).join('\n'));
 
                 getByID('heroes').innerHTML += arr.map(el => el.toString('<br>')).join('<hr>');
             }
+            
+            const showTowers = (cls) => {
+                const arr = cls === 'all' ? towers : towers.filter(el => el.stat === cls);
+                if (cls !== 'all') {
+                    const mainStat = arr.map(el => el.power);
+                    getByID('towers').innerHTML = `main stat: ${cls}<br>max: ${Math.max(...mainStat)}`;
+                    getByID('towers').innerHTML += `<br>min: ${Math.min(...mainStat)}`;
+                    getByID('towers').innerHTML += `<br>avg: ${mainStat.reduce((a, b) => a + b) / mainStat.length}`;
+                    getByID('towers').innerHTML += `<hr>`;
+                } else {
+                    getByID('towers').innerHTML = '';
+                }
+                console.log('---------------------------towers dump starts here-------------------');
+                console.log(arr[0].toCSVHeader() + '\n' + arr.map(el => el.toCSVString()).join('\n'));
+                getByID('towers').innerHTML += arr.map(el => el.toString('<br>')).join('<hr>');
+            }
     
-            class Hero {
-                constructor(seedPoints, minStat, diceVal, kHP, kMana) {
-                    this.checkDice = diceVal; // do we randomize this one?
+            const parties = [];
+            const dungeons = [];
 
-                    let seed = seedPoints - minStat * 3;
-                    const asWritten = getByID('as-written').checked;
-                    this.vitality = dice(seed);
-                    this.fullHP = Math.floor(this.vitality * kHP);
-                    this.hp = this.fullHP;
-                    seed = seed + (asWritten ? 0 : minStat) - this.vitality;
-                    this.strength = dice(seed);
-                    seed = seed + (asWritten ? 0 : minStat) - this.strength;
-                    this.agility = dice(seed);
-                    seed = seed + (asWritten ? minStat * 3 : minStat) - this.agility;
-                    this.intelligence = seed;
-                    this.fullMana = Math.floor(this.intelligence * kMana);
-                    this.mana = this.fullMana;
-
-                    this.kMana = kMana;
-                    this.kHP = kHP;
-
-                    this.class = this.vitality >= Math.max(this.strength, this.agility, this.intelligence) ? 'TANK'
-                                 : (this.strength >= Math.max(this.agility, this.intelligence) ? 'FIGHTER'
-                                 : (this.agility >= this.intelligence ? 'ARCHER' : 'MAGE'))
-                }
-                /** negative is damage to enemy */
-                rollStatAgainst(stat, value) {
-                    let roll = dice(this.checkDice);
-                    switch(stat) {
-                        case 'vit': 
-                            roll += this.vitality;
-                            break;
-                        case 'str': 
-                            roll += this.strength;
-                            break;
-                        case 'agi': 
-                            roll += this.agility;
-                            break;
-                        case 'int': 
-                            roll += this.intelligence;
-                            break;
-                        default: alert(`Error: no ${stat} here`);
+            const formParties = () => {
+                let party = [];
+                while (heroes.length) {
+                    let index = randRange(0, heroes.length - 1);
+                    let hero = heroes[index];
+                    party.push(hero);
+                    if (party.length === 3) {
+                        parties.push(party.slice());
+                        party = [];
                     }
-                    const result = value - roll;
-                    if (result > 0) {
-                        this.takeDamage(result);
+                    heroes.splice(index, 1);
+                }
+                let dungeon = [];
+                while (towers.length) {
+                    let index = randRange(0, towers.length - 1);
+                    let tower = towers[index];
+                    dungeon.push(tower);
+                    if (dungeon.length === 3) {
+                        dungeons.push(dungeon.slice());
+                        dungeon = [];
                     }
-                    return result;
-                }
-
-                takeDamage(amount) {
-                    this.hp = this.hp < amount ? 0 : this.hp - amount;
-                }
-                
-                recieveHealing(amount) {
-                    this.hp = this.hp + amount > this.fullHP ? this.fullHP : this.hp + amount;
-                }
-                
-                isAlive() { return this.hp > 0 }
-
-                toTSVHeader() {
-                    return `CLASS\tVIT\tSTR\tAGI\tINT\tHP\tMANA`;
-                }
-                toTSVString() {
-                    return `${this.class}\t${this.vitality}\t${this.strength}\t${this.agility}\t${this.intelligence}\t${this.fullHP}\t${this.fullMana}`;
-                }
-                toString(delim = '<br>') {
-                    return `${this.class}${delim}VIT: ${this.vitality}${delim}STR: ${this.strength}${delim}AGI: ${this.agility}${delim}INT: ${this.intelligence}${delim}HP: ${this.hp}/${this.fullHP}${delim}MANA: ${this.mana}/${this.fullMana}`;
-                }
-
-                healthStats() {
-                    return `${this.hp}/${this.fullHP}`;
-                }
-                manaStats() {
-                    return `${this.mana}/${this.fullMana}`;
+                    towers.splice(index, 1);
                 }
             }
 
-            class Tower {
-                constructor(stat, power, hp) {
-                    this.stat = stat;
-                    this.power = power;
-                    this.fullHP = hp;
-                    this.hp = hp;
+            const dumpParties = () => {
+                console.log('-----------parties dump-------------');
+                console.log(parties[0][0].toCSVHeaderState());
+                for (let i = 0; i < parties.length; i++) {
+                    console.log('party #' + i);
+                    parties[i].forEach(el => console.log(el.toCSVStringState()));
                 }
-                toString(delim = '<br>') {
-                    return `${this.stat}${delim}POW: ${this.power}${delim}HP: ${this.hp}/${this.fullHP}`;
+                console.log('-----------dungeons dump-------------');
+                console.log(dungeons[0][0].toCSVHeader());
+                for (let i = 0; i < dungeons.length; i++) {
+                    console.log('dungeon #' + i);
+                    dungeons[i].forEach(el => console.log(el.toCSVString()));
                 }
-                isAlive() { return this.hp > 0 }
             }
+
     
         </script>
     </head>
@@ -186,34 +246,52 @@
                     <h3>hero</h3>
         total points <input type="number" min="1" id="max-main" value="20"><br>
         min_secondary <input type="number" min="1" id="min-secondary" value="1"><br>
-        k hp <input type="number" min="1" id="k-hp" value="2" step="0.1">k mana <input type="number" min="1" id="k-mana" value="2" step="0.1"><br>
-        hero dice <input type="number" min="1" id="hero-dice" value="6"><br>
-        как в диздоке (3 * min_secondary) плюсуются в последний стат <input type="checkbox" id="as-written"><br>
-        <button onclick="genHeroes()">add</button><button onclick="genHeroes(true)">re-create</button> <input type="number" min="1" id="count" value="100"> heroes<br>
+        k hp <input type="number" min="1" id="k-hp-tank" value="100">
+        <input type="number" min="1" id="k-hp-fighter" value="75">
+        <input type="number" min="1" id="k-hp-archer" value="50">
+        <input type="number" min="1" id="k-hp-priest" value="25">
+        <br>
+        k mana 
+        <input type="number" min="1" id="k-mana-tank" value="25">
+        <input type="number" min="1" id="k-mana-fighter" value="50">
+        <input type="number" min="1" id="k-mana-archer" value="75">
+        <input type="number" min="1" id="k-mana-priest" value="100">
+        <br>
+        hero dice <input type="number" min="1" id="hero-dice-min" value="6"> - <input type="number" min="1" id="hero-dice-max" value="8"><br>
+
+        <button onclick="genHeroes()">add</button><button onclick="genHeroes(true)">re-create</button> <input type="number" min="1" id="count" value="102"> heroes<br>
         <button id="tank" onclick="show(this.id)"></button>
         <button id="fighter" onclick="show(this.id)"></button>
         <button id="archer" onclick="show(this.id)"></button>
-        <button id="mage" onclick="show(this.id)"></button>
+        <button id="priest" onclick="show(this.id)"></button>
         <button id="all" onclick="show(this.id)">all</button><br>
         <select id="tankSel" onchange="selectHero(this.value)"></select><br>
         <select id="fighterSel" onchange="selectHero(this.value)"></select><br>
         <select id="archerSel" onchange="selectHero(this.value)"></select><br>
-        <select id="mageSel" onchange="selectHero(this.value)"></select><br>
+        <select id="priestSel" onchange="selectHero(this.value)"></select><br>
                 </td>
                 <td>
                     <h3>tower</h3>
-                    power <input type="number" value="7" id="tower-power"><br>
-                    hp <input type="number" value="5" id="tower-hp"><br>
-                    stat <select id="tower-stat">
-                        <option value="vit">vitality</option>
-                        <option value="str">strength</option>
-                        <option value="agi">agility</option>
-                        <option value="int">intelligence</option>
-                    </select> <br>
-                    <button onclick="createTower()">create tower</button>
+                    power <input type="number" value="7" id="tower-power"> use heroes power <input type="checkbox" id="heroes-power"><br>
+                    hp <input type="number" value="30" id="tower-hp-min"> - <input type="number" value="100" id="tower-hp-max"><br>
+                    tower dice <input type="number" min="1" id="tower-dice-min" value="6"> - <input type="number" min="1" id="tower-dice-max" value="8"><br>
+                    stat <select id="tower-stat"> 
+                        <option value="vitality">vitality</option>
+                        <option value="strength">strength</option>
+                        <option value="agility">agility</option>
+                        <option value="intelligence">intelligence</option>
+                    </select> random <input type="checkbox" id="random-stat"> (based on heroes) <br>
+                    <!-- <button onclick="createTower()">create 1 tower</button> -->
+                    <button id="heroes-towers" onclick="createTowersForHeroes(true)" style="display: none;">re-create towers for heroes</button>
+                    <button id="heroes-towers" onclick="createTowersForHeroes()" style="display: none;">add towers for heroes</button>
+                    <button id="vitality" onclick="showTowers(this.id)"></button>
+                    <button id="strength" onclick="showTowers(this.id)"></button>
+                    <button id="agility" onclick="showTowers(this.id)"></button>
+                    <button id="intelligence" onclick="showTowers(this.id)"></button>
+                    <button id="all" onclick="showTowers(this.id)">all</button><br>
                 </td>
             </tr>
-            <tк>
+            <tr>
                 <td>
                     <div id="heroes"></div>
                     <button id="attack" onclick="attack()" style="display: none;">attack!</button>
